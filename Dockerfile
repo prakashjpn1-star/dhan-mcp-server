@@ -7,5 +7,4 @@ RUN pip install --no-cache-dir . && useradd --system --uid 10001 app
 USER 10001
 ENV MCP_BIND_HOST=0.0.0.0
 EXPOSE 8000
-ENTRYPOINT ["dhan-mcp-server"]
-CMD ["--transport", "streamable-http"]
+CMD ["python", "-m", "dhan_mcp_server.deploy"]

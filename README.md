@@ -43,3 +43,7 @@ Build `docker build -t dhan-mcp .`. Run behind an HTTPS proxy: `docker run --rm 
 - https://github.com/modelcontextprotocol/python-sdk
 
 The old trading server interface has intentionally been removed from the entry point. This is a breaking change for clients that relied on order tools.
+
+## Render hosting
+
+Create a Docker web service from this branch. The default image command starts the ASGI service on Render's PORT. Until both Dhan credentials and all OAuth settings are present, /health reports configuration_required and /mcp returns HTTP 503; no broker tools are exposed. Set secrets in the Render dashboard, not in source control. Set MCP_RESOURCE_URL to the actual service HTTPS URL followed by /mcp. Redeploy after setting the values. The ready health response confirms configuration presence, not successful live broker or OAuth authentication.
