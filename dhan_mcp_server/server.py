@@ -11,11 +11,11 @@ from .client import DhanClient, credential
 from .auth import remote_auth
 from urllib.parse import urlsplit
 
-def build_server(remote=False, client=None):
+def build_server(remote=False, client=None, owner_oauth=None):
     broker = client or DhanClient()
     options = {}
     if remote:
-        verifier, auth = remote_auth()
+        verifier, auth = (owner_oauth, owner_oauth.settings()) if owner_oauth else remote_auth()
         host = urlsplit(os.environ["MCP_RESOURCE_URL"]).netloc
         options = dict(token_verifier=verifier, auth=auth,
                        host=os.getenv("MCP_BIND_HOST", "127.0.0.1"),

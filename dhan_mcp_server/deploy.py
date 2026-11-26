@@ -81,12 +81,17 @@ async def pending_lifespan(app):
 
 def create_app():
     load_dotenv()
-    required = ("MCP_OAUTH_ISSUER", "MCP_JWKS_URL", "MCP_RESOURCE_URL", "MCP_ALLOWED_SUBJECT")
+    self_hosted = os.getenv("MCP_AUTH_MODE") == "self-hosted"
+    required = ("MCP_RESOURCE_URL",) if self_hosted else ("MCP_OAUTH_ISSUER", "MCP_JWKS_URL", "MCP_RESOURCE_URL", "MCP_ALLOWED_SUBJECT")
+    owner = None
     try:
         credential("DHAN_ACCESS_TOKEN")
         credential("DHAN_CLIENT_ID")
         configured = all(os.getenv(key, "").strip() for key in required)
-    except (BrokerError, OSError, UnicodeError):
+        if configured and self_hosted:
+            from .owner_oauth import owner_auth
+            owner = owner_auth()
+    except (BrokerError, OSError, UnicodeError, ValueError):
         configured = False
     if not configured:
         async def health(request):
@@ -96,11 +101,15 @@ def create_app():
         return Starlette(lifespan=pending_lifespan, routes=[Route("/", health), Route("/health", health),
                                  Route("/mcp", blocked, methods=["GET", "POST", "DELETE"])])
     from .server import build_server
-    mcp = build_server(remote=True)
-    @mcp.custom_route("/health", methods=["GET"])
+    mcp = build_server(remote=True, owner_oauth=owner)
+    @mcp.custom_route("/", methods=["GET", "HEAD"])
+    @mcp.custom_route("/health", methods=["GET", "HEAD"])
     async def health(request):
         return JSONResponse({"status": "ready", "mcp_enabled": True})
-    return mcp.streamable_http_app()
+    app = mcp.streamable_http_app()
+    if owner:
+        app.router.routes[0:0] = owner.routes()
+    return app
 
 def main():
     uvicorn.run(create_app(), host="0.0.0.0", port=int(os.getenv("PORT", os.getenv("MCP_PORT", "8000"))))
