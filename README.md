@@ -47,3 +47,7 @@ The old trading server interface has intentionally been removed from the entry p
 ## Render hosting
 
 Create a Docker web service from this branch. The default image command starts the ASGI service on Render's PORT. Until both Dhan credentials and all OAuth settings are present, /health reports configuration_required and /mcp returns HTTP 503; no broker tools are exposed. Set secrets in the Render dashboard, not in source control. Set MCP_RESOURCE_URL to the actual service HTTPS URL followed by /mcp. Redeploy after setting the values. The ready health response confirms configuration presence, not successful live broker or OAuth authentication.
+
+## Optional free Upstox market-data provider
+
+Dhan portfolio tools remain unchanged. For live market data without a Dhan Data API subscription, generate the free read-only Analytics Token at https://account.upstox.com/developer/apps (Analytics tab; see https://upstox.com/developer/api-documentation/analytics-token/). Add UPSTOX_ANALYTICS_TOKEN in Render Environment or mount UPSTOX_ANALYTICS_TOKEN_FILE. No token is stored in Git. Upstox account required. Use upstox_search_instruments followed by upstox_get_quotes, upstox_get_history or upstox_get_intraday. The provider is explicit; Dhan instrument IDs are not substituted for Upstox keys. The returned fetched_at_utc is retrieval time, not exchange trade time. All calls are GET, cached, paced and retried for transient failures. The public MCP endpoint remains OAuth protected. Market access must be verified with a real analytics token.

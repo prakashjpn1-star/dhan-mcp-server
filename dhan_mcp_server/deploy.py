@@ -23,6 +23,23 @@ async def broker_smoke_test():
     except Exception:
         log.warning("DHAN_SMOKE MCP tool registration FAIL")
         return
+    if os.getenv("UPSTOX_ANALYTICS_TOKEN") or os.getenv("UPSTOX_ANALYTICS_TOKEN_FILE"):
+        try:
+            from .upstox import UpstoxMarket
+            market = UpstoxMarket()
+            search = await market.search("UGROCAP")
+            match = next(row for row in search["data"] if row.get("trading_symbol") == "UGROCAP" and row.get("segment") == "NSE_EQ")
+            result = await market.quotes([match["instrument_key"]])
+            row = next(row for row in result["data"].values() if row.get("instrument_token") == match["instrument_key"])
+            price = row.get("last_price")
+            if isinstance(price, (int, float)) and not isinstance(price, bool) and 0 < price < 1e9:
+                log.info("DHAN_SMOKE UPSTOX UGROCAP LTP PASS: INR %.2f", price)
+            else:
+                log.warning("DHAN_SMOKE UPSTOX quote missing")
+        except BrokerError as exc:
+            log.warning("DHAN_SMOKE UPSTOX FAIL: %s", str(exc))
+        except Exception:
+            log.warning("DHAN_SMOKE UPSTOX FAIL: unexpected error")
     for label, path in (("profile", "profile"), ("holdings", "holdings"), ("positions", "positions")):
         try:
             await broker.request(path)

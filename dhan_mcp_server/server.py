@@ -98,6 +98,29 @@ def build_server(remote=False, client=None):
         return await broker.request("charts/intraday", dict(securityId=security_id,
             exchangeSegment=exchange_segment, instrument=instrument, interval=str(interval),
             fromDate=from_date, toDate=to_date, oi=False))
+    from .upstox import UpstoxMarket
+    market = UpstoxMarket()
+
+    @mcp.tool(annotations=annotation)
+    async def upstox_search_instruments(query: str, exchange: Literal["NSE", "BSE"] = "NSE"):
+        """Find Upstox instrument keys for equities; use this when Dhan data subscription is unavailable."""
+        return await market.search(query, exchange)
+
+    @mcp.tool(annotations=annotation)
+    async def upstox_get_quotes(instrument_keys: list[str]):
+        """Upstox latest price, OHLC, volume and available depth. Use keys from upstox_search_instruments. Source and retrieval time included."""
+        return await market.quotes(instrument_keys)
+
+    @mcp.tool(annotations=annotation)
+    async def upstox_get_history(instrument_key: str, from_date: str, to_date: str, unit: Literal["days", "minutes"] = "days", interval: int = 1):
+        """Upstox historical OHLCV candles. Dates YYYY-MM-DD."""
+        return await market.history(instrument_key, from_date, to_date, interval, unit)
+
+    @mcp.tool(annotations=annotation)
+    async def upstox_get_intraday(instrument_key: str, interval: int = 5):
+        """Upstox current-session OHLCV candles, interval in minutes."""
+        return await market.intraday(instrument_key, interval)
+
     return mcp
 
 def main():

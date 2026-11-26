@@ -23,6 +23,6 @@ async def test_jwt_claims():
 
 async def test_tools_are_read_only():
     tools = await build_server().list_tools()
-    assert len(tools) == 10
+    assert len(tools) == 14
     assert all(t.annotations.readOnlyHint for t in tools)
     assert not any("order" in t.name for t in tools)
