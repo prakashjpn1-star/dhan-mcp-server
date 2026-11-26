@@ -30,5 +30,19 @@ jobs:
       - run: |
           docker run -d --name dhan-mcp -p 8000:8000 dhan-mcp:test
           trap 'docker logs dhan-mcp; docker rm -f dhan-mcp' EXIT
-          curl --retry 10 --retry-connrefused --retry-delay 1 --fail http://localhost:8000/health
+          curl --retry 15 --retry-all-errors --retry-delay 1 --max-time 5 --fail http://localhost:8000/health
           test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:8000/mcp)" = 503
+
+      - name: Verify protected OAuth container
+        run: |
+          docker run -d --name dhan-oauth -p 8001:8000 \
+            -e MCP_AUTH_MODE=self-hosted \
+            -e MCP_RESOURCE_URL=https://test.example/mcp \
+            -e MCP_OWNER_PASSWORD=synthetic-ci-only-password-not-real-123 \
+            -e DHAN_ACCESS_TOKEN=synthetic -e DHAN_CLIENT_ID=synthetic dhan-mcp:test
+          trap 'docker logs dhan-oauth; docker rm -f dhan-oauth' EXIT
+          curl --retry 15 --retry-all-errors --retry-delay 1 --max-time 5 --fail http://localhost:8001/health | grep '"mcp_enabled":true'
+          curl -fsS http://localhost:8001/.well-known/oauth-authorization-server | grep 'S256'
+          curl -fsS http://localhost:8001/.well-known/oauth-protected-resource/mcp | grep 'https://test.example/mcp'
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Host: test.example' http://localhost:8001/mcp)" = 401
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Host: test.example' -H 'Authorization: Bearer invalid' http://localhost:8001/mcp)" = 401
