@@ -26,6 +26,10 @@ async def test_owner_flow():
         assert (await client.get("/authorize",params={**params,"resource":"https://evil.example"})).status_code==400
         response=await client.get("/authorize",params=params)
         assert response.status_code==200
+        assert "form-action 'self' "+CALLBACK in response.headers["content-security-policy"]
+        assert "script-src 'nonce-" in response.headers["content-security-policy"]
+        assert "script-src 'unsafe-inline'" not in response.headers["content-security-policy"]
+        assert "event.preventDefault()" in response.text
         nonce=client.cookies["__Host-dhan-oauth"]
         assert (await client.post("/authorize",data={"nonce":nonce,"password":"wrong","decision":"allow"},headers={"origin":ORIGIN})).status_code==403
         await client.get("/authorize",params=params)
@@ -38,6 +42,10 @@ async def test_owner_flow():
         assert response.status_code==303
         q=parse_qs(urlsplit(response.headers["location"]).query)
         assert q["iss"]==[ORIGIN] and q["state"]==["state"]
+        assert response.headers["location"].startswith(CALLBACK+"?")
+        assert "form-action 'self' "+CALLBACK in response.headers["content-security-policy"]
+        duplicate=await client.post("/authorize",data=payload,headers={"origin":ORIGIN})
+        assert duplicate.status_code==400 and "already submitted" in duplicate.text
         payload=dict(grant_type="authorization_code",client_id=cid,redirect_uri=CALLBACK,
                      code=q["code"][0],code_verifier=VERIFIER,resource=RESOURCE)
         assert (await client.post("/token",data={**payload,"code_verifier":"b"*43})).status_code==400

@@ -26,7 +26,7 @@ SCOPE = "dhan:read"
 HEADERS = {"Cache-Control": "no-store", "Pragma": "no-cache",
            "Referrer-Policy": "same-origin", "X-Content-Type-Options": "nosniff",
            "X-Frame-Options": "DENY",
-           "Content-Security-Policy": "default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"}
+           "Content-Security-Policy": "default-src 'none'; form-action 'self' " + CALLBACK + "; frame-ancestors 'none'; base-uri 'none'"}
 ACCESS_TTL = 900
 REFRESH_TTL = 7 * 86400
 
@@ -156,13 +156,29 @@ class OwnerOAuth:
             nonce = random_id()
             self.pending[digest(nonce)] = dict(client=p["client_id"],challenge=p["code_challenge"],
                 state=p["state"],expires=time.time()+300)
+            script_nonce = random_id()
             page = """<!doctype html><html lang="en"><meta charset="utf-8"><title>Dhan portfolio authorization</title>
             <h1>Authorize read-only Dhan portfolio access</h1><p>Allow ChatGPT to read holdings, positions and funds. No order placement.</p>
             <form method="post" action="/authorize"><input type="hidden" name="nonce" value="%s">
             <label>Owner password <input type="password" name="password" required autocomplete="current-password" maxlength="512"></label>
             <button type="submit" name="decision" value="allow">Authorize</button>
-            <button type="submit" name="decision" value="deny" formnovalidate>Deny</button></form></html>""" % html.escape(nonce)
-            resp=HTMLResponse(page,headers=HEADERS)
+            <button type="submit" name="decision" value="deny" formnovalidate>Deny</button></form>
+            <p id="status" role="status">Click Authorize once to return to ChatGPT.</p>
+            <script nonce="%s">
+            const form = document.querySelector('form');
+            let submitted = false;
+            form.addEventListener('submit', function(event) {
+                if (submitted) { event.preventDefault(); return; }
+                submitted = true;
+                document.getElementById('status').textContent = 'Submitting authorization. Returning to ChatGPT…';
+            });
+            window.addEventListener('pageshow', function(event) {
+                if (event.persisted) { submitted = true; document.getElementById('status').textContent = 'Start a fresh connection in ChatGPT.'; }
+            });
+            </script></html>""" % (html.escape(nonce), html.escape(script_nonce))
+            page_headers = {**HEADERS, "Content-Security-Policy":
+                HEADERS["Content-Security-Policy"] + "; script-src 'nonce-" + script_nonce + "'"}
+            resp=HTMLResponse(page,headers=page_headers)
             resp.set_cookie("__Host-dhan-oauth",nonce,max_age=300,secure=True,httponly=True,samesite="lax",path="/")
             return resp
         try:
@@ -186,11 +202,11 @@ class OwnerOAuth:
         cookie=request.cookies.get("__Host-dhan-oauth","")
         if not nonce or not hmac.compare_digest(nonce.encode(),cookie.encode()):
             logging.getLogger(__name__).warning("OAUTH_FORM rejected nonce/cookie binding")
-            return error("invalid_request")
+            return HTMLResponse("This authorization page has expired or was already submitted. Close it and start a new connection in ChatGPT.",status_code=400,headers=HEADERS)
         pending=self.pending.pop(digest(nonce),None)
         if not pending or pending["expires"]<=time.time():
             logging.getLogger(__name__).warning("OAUTH_FORM rejected expired or consumed transaction")
-            return error("invalid_request")
+            return HTMLResponse("This authorization page has expired or was already submitted. Close it and start a new connection in ChatGPT.",status_code=400,headers=HEADERS)
         if p.get("decision")=="deny":
             return self.redirect(pending,error="access_denied")
         if len(self.failures)>=5:
