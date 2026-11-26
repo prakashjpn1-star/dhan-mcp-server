@@ -7,6 +7,7 @@ import base64
 import hashlib
 import hmac
 import html
+import logging
 import os
 import re
 import secrets
@@ -23,7 +24,7 @@ from .client import credential
 CALLBACK = "https://chatgpt.com/connector_platform_oauth_redirect"
 SCOPE = "dhan:read"
 HEADERS = {"Cache-Control": "no-store", "Pragma": "no-cache",
-           "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff",
+           "Referrer-Policy": "same-origin", "X-Content-Type-Options": "nosniff",
            "X-Frame-Options": "DENY",
            "Content-Security-Policy": "default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"}
 ACCESS_TTL = 900
@@ -167,15 +168,28 @@ class OwnerOAuth:
         try:
             p=await body(request,"application/x-www-form-urlencoded")
         except (ValueError,UnicodeError):
+            logging.getLogger(__name__).warning("OAUTH_FORM rejected form encoding")
             return error("invalid_request")
-        if request.headers.get("origin") != self.issuer:
+        # Browser privacy policies can serialize an otherwise same-origin
+        # form POST's Origin as null. Require positive Fetch Metadata evidence
+        # in that case, in addition to the one-time nonce and host-only cookie.
+        origin = request.headers.get("origin")
+        fetch_site = request.headers.get("sec-fetch-site")
+        if fetch_site in ("cross-site", "same-site") or (
+            origin != self.issuer and not (
+                origin in (None, "null") and fetch_site == "same-origin"
+            )
+        ):
+            logging.getLogger(__name__).warning("OAUTH_FORM rejected origin policy")
             return error("invalid_request")
         nonce=p.get("nonce","")
         cookie=request.cookies.get("__Host-dhan-oauth","")
         if not nonce or not hmac.compare_digest(nonce.encode(),cookie.encode()):
+            logging.getLogger(__name__).warning("OAUTH_FORM rejected nonce/cookie binding")
             return error("invalid_request")
         pending=self.pending.pop(digest(nonce),None)
         if not pending or pending["expires"]<=time.time():
+            logging.getLogger(__name__).warning("OAUTH_FORM rejected expired or consumed transaction")
             return error("invalid_request")
         if p.get("decision")=="deny":
             return self.redirect(pending,error="access_denied")

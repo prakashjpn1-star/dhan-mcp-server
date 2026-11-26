@@ -32,7 +32,9 @@ async def test_owner_flow():
         nonce=client.cookies["__Host-dhan-oauth"]
         payload={"nonce":nonce,"password":"test-password-not-real-"*3,"decision":"allow"}
         assert (await client.post("/authorize",data=payload,headers={"origin":"https://evil.example"})).status_code==400
-        response=await client.post("/authorize",data=payload,headers={"origin":ORIGIN})
+        assert (await client.post("/authorize",data=payload,headers={"origin":"null","sec-fetch-site":"cross-site"})).status_code==400
+        assert (await client.post("/authorize",data=payload,headers={"origin":"null"})).status_code==400
+        response=await client.post("/authorize",data=payload,headers={"origin":"null","sec-fetch-site":"same-origin"})
         assert response.status_code==303
         q=parse_qs(urlsplit(response.headers["location"]).query)
         assert q["iss"]==[ORIGIN] and q["state"]==["state"]
