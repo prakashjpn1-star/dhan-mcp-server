@@ -28,7 +28,10 @@ HEADERS = {"Cache-Control": "no-store", "Pragma": "no-cache",
            "X-Frame-Options": "DENY",
            "Content-Security-Policy": "default-src 'none'; form-action 'self' " + CALLBACK + "; frame-ancestors 'none'; base-uri 'none'"}
 ACCESS_TTL = 900
-REFRESH_TTL = 7 * 86400
+REFRESH_TTL = 90 * 86400
+# Retain used refresh-token hashes for replay detection over the full family lifetime.
+# 90 days at 15-minute access-token rotations requires up to 8,640 records.
+MAX_REFRESH_RECORDS = 16384
 
 def digest(value):
     return hashlib.sha256(value.encode()).hexdigest()
@@ -258,7 +261,7 @@ class OwnerOAuth:
                     del store[k]
 
     def issue(self,cid,family,deadline):
-        if len(self.access)>=512 or len(self.refresh)>=2048:
+        if len(self.access)>=512 or len(self.refresh)>=MAX_REFRESH_RECORDS:
             return error("temporarily_unavailable",503)
         access,refresh=random_id(),random_id()
         now=time.time()
