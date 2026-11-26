@@ -85,3 +85,18 @@ async def test_expiry():
     from dhan_mcp_server.owner_oauth import digest
     owner.access[digest("expired")]={"client":"x","expires":0,"family":"f"}
     assert await owner.verify_token("expired") is None
+
+async def test_refresh_family_lifetime():
+    import time
+    from dhan_mcp_server.owner_oauth import ACCESS_TTL, REFRESH_TTL, MAX_REFRESH_RECORDS, digest
+    import json
+    assert ACCESS_TTL == 900
+    assert REFRESH_TTL == 90 * 86400
+    assert MAX_REFRESH_RECORDS > REFRESH_TTL // ACCESS_TTL
+    owner = OwnerOAuth(RESOURCE, "synthetic-password-" * 3)
+    deadline = time.time() + REFRESH_TTL
+    issued = json.loads(owner.issue("client", "family", deadline).body)
+    assert owner.refresh[digest(issued["refresh_token"])]["expires"] == deadline
+    rotated = json.loads(owner.issue("client", "family", deadline).body)
+    assert owner.refresh[digest(rotated["refresh_token"])]["expires"] == deadline
+    assert 0 < rotated["expires_in"] <= ACCESS_TTL
