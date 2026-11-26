@@ -1,211 +1,45 @@
-# Dhan MCP Server - Python Trading API Integration with Model Context Protocol
+# Dhan MCP Server — read-only remote integration
 
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![FastMCP](https://img.shields.io/badge/FastMCP-MCP%20Server-green.svg)](https://github.com/jlowin/fastmcp)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Dhan API](https://img.shields.io/badge/Dhan-Trading%20API-orange.svg)](https://dhanhq.co/)
+Python 3.11+ MCP server for one Dhan account. Supports STDIO for local clients and Streamable HTTP for remote clients. No trading mutation tools or generic HTTP proxy are exposed. Do not deploy an unauthenticated remote instance.
 
-**Production-ready MCP server for algorithmic trading with Dhan broker API** - Complete integration with Dhan trading platform providing market data, order management, portfolio tracking, and real-time trading capabilities through the Model Context Protocol.
+## Setup
 
-## 🚀 Overview
+Create a virtual environment, activate it, and run `python -m pip install ".[dev]"`. On Windows use `py -3.12 -m venv .venv` and `.venv\Scripts\activate`; on Linux use `python3 -m venv .venv` and `source .venv/bin/activate`. Copy .env.example to .env (not tracked) and provide Dhan client ID and access token obtained from Dhan. Alternatively set DHAN_CLIENT_ID_FILE and DHAN_ACCESS_TOKEN_FILE to mounted secret files, which take precedence over environment variables and are reread per broker request. Rotate broker credentials outside MCP; there is no token generation tool. Never paste credentials into chat or tool arguments.
 
-The **Dhan MCP Server** is a comprehensive Python-based Model Context Protocol (MCP) server that enables seamless integration with the Dhan trading platform. Ideal for **algorithmic trading**, **automated trading systems**, **trading bots**, and **quantitative trading strategies** in Indian stock markets.
+Local: `python -m dhan_mcp_server --transport stdio`. For local MCP clients configure the executable as the virtual environment Python and arguments as `["-m","dhan_mcp_server","--transport","stdio"]`. The process environment is the trust boundary. Windows and Unix launch scripts are included. No stdout logging outside MCP protocol.
 
-### Key Features
+## Remote OAuth and ChatGPT
 
-- **Complete Trading Suite**: 19 production-ready tools for order execution, position management, and market analysis
-- **Real-time Market Data**: Live LTP, OHLC, market depth, and tick-by-tick data streaming
-- **Order Management**: Place, modify, cancel orders with support for all order types (Market, Limit, Stop Loss, Cover, Bracket)
-- **Risk Management**: Pre-trade margin calculation and position monitoring
-- **Historical Data**: Access to intraday and daily historical data for backtesting
-- **Portfolio Tracking**: Real-time positions, holdings, and P&L monitoring
-- **MCP Protocol**: Standards-compliant Model Context Protocol implementation using FastMCP
+Use a managed or self-hosted OAuth authorization server, e.g. an appropriately configured identity provider. This repository is the OAuth resource server, not an authorization server. The provider must expose authorization-server metadata, authorization code flow with S256 PKCE, client registration compatible with your ChatGPT configuration (dynamic registration or pre-registered client), and RS256 JWT access tokens with audience equal to the full MCP resource URL. Register the exact callback URL shown by ChatGPT and configure its requested scopes. Enable MFA for the owner account. Verify the provider supports resource indicators/audience issuance for the MCP endpoint; an ordinary OIDC ID token is not a substitute for an access token.
 
-## 📋 Installation
+Set:
+- MCP_OAUTH_ISSUER: exact issuer HTTPS URL as in the access token
+- MCP_JWKS_URL: trusted HTTPS JWKS endpoint
+- MCP_RESOURCE_URL: public HTTPS URL ending /mcp, exactly matching token aud
+- MCP_ALLOWED_SUBJECT: immutable owner subject from the provider (single-account isolation)
+- MCP_REQUIRED_SCOPE: default dhan:read
 
-### Prerequisites
+Run `python -m dhan_mcp_server --transport streamable-http`. Terminate TLS at a reverse proxy, preserve Host, do not rewrite /mcp or /.well-known routes, and forward Authorization. Restrict direct port access. Register the public /mcp URL in ChatGPT's custom MCP app configuration and select OAuth; follow the provider's sign-in and consent flow. The SDK serves protected-resource metadata and bearer challenges. Test an unauthenticated request returns 401 and discovery points at the configured issuer before connecting. A 403 can indicate missing scope, incorrect audience/subject or Host/Origin policy. Verify provider configuration and logs without logging tokens. Actual ChatGPT connection requires external OAuth deployment and live validation; no provider account has been provisioned by this project.
 
-- Python 3.8 or higher
-- Dhan trading account with API access
-- Dhan API credentials (Client ID and Access Token)
+## Tools
 
-### Quick Start
+search_instruments (symbol/name/security ID), get_market_ltp, get_market_ohlc, get_market_depth, get_historical_data, get_intraday_data, get_holdings, get_positions, get_fund_limits, validate_token. All advertise read-only annotations; the underlying client independently rejects non-allowlisted paths.
 
-```bash
-# Clone the repository
-git clone https://github.com/vikkysarswat/dhan-mcp-server.git
-cd dhan-mcp-server
+For UGRO Capital, search for UGROCAP, select NSE equity ID, then invoke get_market_ltp with instruments {"NSE_EQ":[resolved ID]}. Do not guess security IDs. Market-data subscriptions and Dhan API limits apply. Live quote snapshots are cached for two seconds; historical candles for five minutes; instrument master for six hours. Portfolio data is never cached. Requests are serialized and paced, with bounded retries on transient errors and 429. All broker calls use HTTPS and fixed upstream URLs. Broker tokens never serve as MCP tokens.
 
-# Install dependencies
-pip install -r requirements.txt
+## Deployment
 
-# Set up environment variables
-export DHAN_CLIENT_ID="your_client_id"
-export DHAN_ACCESS_TOKEN="your_access_token"
+Build `docker build -t dhan-mcp .`. Run behind an HTTPS proxy: `docker run --rm --env-file .env -p 127.0.0.1:8000:8000 dhan-mcp`. For a production deployment mount secret files read-only and configure the OAuth variables separately. Keep a single worker/replica per Dhan account because rate limits and cache are process-local. Restrict container and proxy logs to avoid sensitive request content. Do not share the endpoint with other users. JWT authorization changes take effect when tokens expire; use short-lived tokens and provider revocation controls. A compromised broker token must be revoked at Dhan.
 
-# Run the MCP server
-python -m dhan_mcp_server
-```
+## Tests
 
-### Installation via pip
+`python -m pytest -q` uses synthetic credentials, mocked Dhan HTTP responses and locally generated RSA keys. CI runs on Linux and Windows and builds the Docker image. No tests should place orders. Verify real quotes, data subscription, holdings, TLS and OAuth end-to-end separately before production.
 
-```bash
-pip install dhan-mcp-server
-```
+## API references
 
-### Configuration
+- https://dhanhq.co/docs/v2/
+- https://dhanhq.co/docs/v2/instruments/
+- https://modelcontextprotocol.io/specification/
+- https://github.com/modelcontextprotocol/python-sdk
 
-Create a `.env` file in the project root:
-
-```env
-DHAN_CLIENT_ID=your_dhan_client_id
-DHAN_ACCESS_TOKEN=your_dhan_access_token
-```
-
-## 📊 Complete Feature Matrix
-
-### **Account Management (3 Tools)**
-
-| Tool | Functionality | Status |
-|------|---------------|--------|
-| `get_profile()` | User profile and account information | ✅ Complete |
-| `validate_token()` | Access token validation and expiry | ✅ Complete |
-| `get_fund_limits()` | Account balance and margin information | ✅ Complete |
-
-### **Trading Operations (4 Tools)**
-
-| Tool | Functionality | Status |
-|------|---------------|--------|
-| `place_order({...})` | Place new orders (all types & products) | ✅ Complete |
-| `modify_order({...})` | Modify pending orders | ✅ Complete |
-| `cancel_order({orderId})` | Cancel pending orders | ✅ Complete |
-| `slice_order({...})` | Handle large quantity orders | ✅ Complete |
-
-### **Order & Trade Tracking (5 Tools)**
-
-| Tool | Functionality | Status |
-|------|---------------|--------|
-| `get_orders()` | Current day's order book | ✅ Complete |
-| `get_order_by_id({orderId})` | Specific order details | ✅ Complete |
-| `get_order_by_correlation_id({correlationId})` | Find order by custom ID | ✅ Complete |
-| `get_trades()` | Current day's executed trades | ✅ Complete |
-| `get_trades_by_order_id({orderId})` | Trades for specific order | ✅ Complete |
-
-### **Position & Holdings Management (2 Tools)**
-
-| Tool | Functionality | Status |
-|------|---------------|--------|
-| `get_positions()` | Real-time open positions | ✅ Complete |
-| `get_holdings()` | Long-term holdings portfolio | ✅ Complete |
-
-### **Risk Management (1 Tool)**
-
-| Tool | Functionality | Status |
-|------|---------------|--------|
-| `calculate_margin({...})` | Pre-trade margin calculation | ✅ Complete |
-
-### **Market Data (3 Tools)**
-
-| Tool | Functionality | Status |
-|------|---------------|--------|
-| `get_market_ltp({...})` | Live last traded prices | ✅ Complete |
-| `get_market_ohlc({...})` | OHLC data with volume | ✅ Complete |
-| `get_market_depth({...})` | Full market depth & order book | ✅ Complete |
-
-### **Historical Data & Analysis (3 Tools)**
-
-| Tool | Functionality | Status |
-|------|---------------|--------|
-| `get_historical_data({...})` | Daily OHLC historical data | ✅ Complete |
-| `get_intraday_data({...})` | Minute-level intraday data | ✅ Complete |
-| `get_tick_data({...})` | Tick-by-tick historical data | ✅ Complete |
-
-## 🔧 Usage Examples
-
-### Place a Market Order
-
-```python
-from dhan_mcp_server import DhanMCPServer
-
-server = DhanMCPServer()
-order = server.place_order(
-    security_id="1333",  # Reliance
-    exchange="NSE",
-    transaction_type="BUY",
-    quantity=1,
-    order_type="MARKET",
-    product_type="INTRADAY"
-)
-```
-
-### Get Real-time Market Data
-
-```python
-# Get LTP for multiple securities
-ltp_data = server.get_market_ltp(
-    exchange="NSE",
-    security_ids=["1333", "11536"]  # Reliance, TCS
-)
-
-# Get market depth
-depth = server.get_market_depth(
-    exchange="NSE",
-    security_id="1333"
-)
-```
-
-### Retrieve Historical Data
-
-```python
-import datetime
-
-historical = server.get_historical_data(
-    security_id="1333",
-    exchange="NSE",
-    instrument="EQUITY",
-    from_date=datetime.date(2024, 1, 1),
-    to_date=datetime.date(2024, 12, 31)
-)
-```
-
-## 🏗️ Architecture
-
-Built with:
-- **FastMCP**: High-performance MCP server framework
-- **Dhan Python SDK**: Official Dhan trading API client
-- **Python AsyncIO**: Asynchronous operations for real-time data
-
-## 🔐 Security
-
-- Never commit API credentials to version control
-- Use environment variables or secure vaults for sensitive data
-- Implement IP whitelisting on Dhan platform
-- Enable 2FA on your Dhan account
-
-## 📝 API Documentation
-
-For detailed Dhan API documentation, visit:
-- [Dhan API Documentation](https://dhanhq.co/docs/)
-- [Dhan Python SDK](https://github.com/dhan-oss/DhanHQ-py)
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🔗 Related Projects
-
-- [FastMCP](https://github.com/jlowin/fastmcp) - MCP server framework
-- [Model Context Protocol](https://modelcontextprotocol.io/) - Protocol specification
-- [Dhan Trading Platform](https://dhanhq.co/) - Trading broker
-
-## 📧 Support
-
-For issues, questions, or feature requests, please open an issue on GitHub.
-
-## Keywords
-
-algorithmic trading, trading bot, stock market API, Dhan API, MCP server, Model Context Protocol, Python trading, automated trading, quantitative trading, Indian stock market, NSE, BSE, equity trading, derivatives trading, market data API, real-time trading, trading automation, backtesting, trading strategy
+The old trading server interface has intentionally been removed from the entry point. This is a breaking change for clients that relied on order tools.
